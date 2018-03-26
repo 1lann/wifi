@@ -15,12 +15,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/1lann/wifi/internal/nl80211"
 	"github.com/google/go-cmp/cmp"
 	"github.com/mdlayher/genetlink"
 	"github.com/mdlayher/genetlink/genltest"
 	"github.com/mdlayher/netlink"
 	"github.com/mdlayher/netlink/nlenc"
-	"github.com/mdlayher/wifi/internal/nl80211"
 )
 
 func TestLinux_clientInterfacesBadResponseCommand(t *testing.T) {
@@ -324,6 +324,7 @@ func TestLinux_clientStationInfoMultipleMessages(t *testing.T) {
 
 func TestLinux_clientStationInfoOK(t *testing.T) {
 	want := &StationInfo{
+		HardwareAddr:       net.HardwareAddr([]byte{0x00, 0xAA, 0x01, 0x02, 0x03, 0x04}),
 		Connected:          30 * time.Minute,
 		Inactive:           4 * time.Millisecond,
 		ReceivedBytes:      1000,
@@ -369,7 +370,7 @@ func TestLinux_clientStationInfoOK(t *testing.T) {
 		log.Fatalf("unexpected error: %v", err)
 	}
 
-	if !reflect.DeepEqual(want, got) {
+	if !reflect.DeepEqual(want, got[0]) {
 		t.Fatalf("unexpected station info:\n- want: %v\n-  got: %v",
 			want, got)
 	}

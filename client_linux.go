@@ -11,10 +11,10 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/1lann/wifi/internal/nl80211"
 	"github.com/mdlayher/genetlink"
 	"github.com/mdlayher/netlink"
 	"github.com/mdlayher/netlink/nlenc"
-	"github.com/mdlayher/wifi/internal/nl80211"
 )
 
 // Errors which may occur when interacting with generic netlink.
@@ -123,7 +123,7 @@ func (c *client) BSS(ifi *Interface) (*BSS, error) {
 
 // StationInfo requests that nl80211 return station info for the specified
 // Interface.
-func (c *client) StationInfo(ifi *Interface) (*StationInfo, error) {
+func (c *client) StationInfo(ifi *Interface) ([]*StationInfo, error) {
 	b, err := netlink.MarshalAttributes(ifi.idAttrs())
 	if err != nil {
 		return nil, err
@@ -148,20 +148,25 @@ func (c *client) StationInfo(ifi *Interface) (*StationInfo, error) {
 		return nil, err
 	}
 
-	switch len(msgs) {
-	case 0:
+	if len(msgs) == 0 {
 		return nil, os.ErrNotExist
-	case 1:
-		break
-	default:
-		return nil, errMultipleMessages
 	}
 
 	if err := c.checkMessages(msgs, nl80211.CmdNewStation); err != nil {
 		return nil, err
 	}
 
-	return parseStationInfo(msgs[0].Data)
+	stations := make([]*StationInfo, len(msgs))
+	for i, msg := range msgs {
+		station, err := parseStationInfo(msg.Data)
+		if err != nil {
+			return nil, err
+		}
+
+		stations[i] = station
+	}
+
+	return stations, nil
 }
 
 // checkMessages verifies that response messages from generic netlink contain
@@ -324,10 +329,18 @@ func parseStationInfo(b []byte) (*StationInfo, error) {
 		return nil, err
 	}
 
+	var info StationInfo
+	found := false
+
 	for _, a := range attrs {
 		// The other attributes that are returned here appear to indicate the
 		// interface index and MAC address, which is information we already
 		// possess.  No need to parse them for now.
+		if a.Type == nl80211.AttrMac {
+			info.HardwareAddr = net.HardwareAddr(a.Data)
+			continue
+		}
+
 		if a.Type != nl80211.AttrStaInfo {
 			continue
 		}
@@ -337,11 +350,14 @@ func parseStationInfo(b []byte) (*StationInfo, error) {
 			return nil, err
 		}
 
-		var info StationInfo
 		if err := (&info).parseAttributes(nattrs); err != nil {
 			return nil, err
 		}
 
+		found = true
+	}
+
+	if found {
 		return &info, nil
 	}
 
